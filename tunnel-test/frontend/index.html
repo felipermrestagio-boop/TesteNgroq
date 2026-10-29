@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste Vercel + Cloudflare Tunnel</title>
+  <style>
+    :root {
+      --bg: #f5f7f6;
+      --surface: #ffffff;
+      --text: #14211c;
+      --muted: #5d6b65;
+      --line: #d9e1dd;
+      --accent: #0b6e4f;
+      --ok: #0b6e4f;
+      --err: #b3261e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101714;
+        --surface: #17211d;
+        --text: #e6efeb;
+        --muted: #8fa199;
+        --line: #2a3832;
+        --accent: #4fc79b;
+        --ok: #4fc79b;
+        --err: #f2766d;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    main { max-width: 560px; margin: 0 auto; padding: 40px 20px 64px; }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .status {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border: 1px solid var(--line);
+      border-radius: 8px; background: var(--surface); margin-bottom: 20px;
+      font-size: .95rem;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.ok { background: var(--ok); }
+    .dot.err { background: var(--err); }
+    .status small { color: var(--muted); margin-left: auto; }
+    form { display: flex; gap: 8px; margin-bottom: 8px; }
+    input {
+      flex: 1; min-width: 0; padding: 10px 12px; font: inherit;
+      color: var(--text); background: var(--surface);
+      border: 1px solid var(--line); border-radius: 8px;
+    }
+    button {
+      padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer;
+      color: #fff; background: var(--accent); border: 0; border-radius: 8px;
+    }
+    @media (prefers-color-scheme: dark) { button { color: #08130e; } }
+    button:disabled { opacity: .6; cursor: wait; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #feedback { min-height: 1.4em; margin: 0 0 20px; font-size: .9rem; }
+    #feedback.err { color: var(--err); }
+    #feedback.ok { color: var(--ok); }
+    h2 { font-size: 1rem; margin: 0 0 8px; }
+    ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    li { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    li:last-child { border-bottom: 0; }
+    li time { display: block; color: var(--muted); font-size: .8rem; }
+    .vazio { color: var(--muted); padding: 14px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Teste: Vercel + Cloudflare Tunnel</h1>
+  <p class="sub">Esta página está na Vercel. A API e o banco rodam na sua máquina.</p>
+
+  <div class="status" role="status">
+    <span id="dot" class="dot"></span>
+    <span id="statusTxt">Verificando conexão com a API…</span>
+    <small id="latencia"></small>
+  </div>
+
+  <form id="form">
+    <input id="texto" type="text" maxlength="500" placeholder="Escreva algo para salvar no banco" required>
+    <button id="btn" type="submit">Salvar</button>
+  </form>
+  <p id="feedback" aria-live="polite"></p>
+
+  <h2>Últimos registros</h2>
+  <ul id="lista"><li class="vazio">Carregando…</li></ul>
+</main>
+
+<script src="config.js"></script>
+<script>
+  const API = (window.API_URL || "").replace(/\/$/, "");
+  const $ = (id) => document.getElementById(id);
+
+  async function req(path, opts) {
+    const t0 = performance.now();
+    const r = await fetch(API + path, opts);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    return { data, ms: Math.round(performance.now() - t0) };
+  }
+
+  async function checarSaude() {
+    try {
+      const { ms } = await req("/health");
+      $("dot").className = "dot ok";
+      $("statusTxt").textContent = "API conectada";
+      $("latencia").textContent = ms + " ms";
+    } catch (e) {
+      $("dot").className = "dot err";
+      $("statusTxt").textContent = "Sem conexão com a API (" + API + ")";
+      $("latencia").textContent = "";
+    }
+  }
+
+  async function carregarLista() {
+    const ul = $("lista");
+    try {
+      const { data } = await req("/mensagens");
+      ul.innerHTML = "";
+      if (!data.length) {
+        ul.innerHTML = '<li class="vazio">Nenhum registro ainda. Salve o primeiro acima.</li>';
+        return;
+      }
+      for (const m of data) {
+        const li = document.createElement("li");
+        li.textContent = m.texto;
+        const t = document.createElement("time");
+        t.textContent = "#" + m.id + " · " + new Date(m.criado_em).toLocaleString("pt-BR");
+        li.appendChild(t);
+        ul.appendChild(li);
+      }
+    } catch (e) {
+      ul.innerHTML = '<li class="vazio">Não foi possível carregar os registros.</li>';
+    }
+  }
+
+  $("form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const fb = $("feedback");
+    const btn = $("btn");
+    btn.disabled = true;
+    fb.className = ""; fb.textContent = "";
+    try {
+      const { ms } = await req("/mensagens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto: $("texto").value }),
+      });
+      $("texto").value = "";
+      fb.className = "ok";
+      fb.textContent = "Salvo no banco local em " + ms + " ms.";
+      await carregarLista();
+    } catch (e) {
+      fb.className = "err";
+      fb.textContent = "Não foi possível salvar: " + e.message + ". Verifique se o túnel e a API estão ativos.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  checarSaude();
+  carregarLista();
+  setInterval(checarSaude, 15000);
+</script>
+</body>
+</html>

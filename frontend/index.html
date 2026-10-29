@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste Vercel + Cloudflare Tunnel</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 1.4rem; }
+    .row { display: flex; gap: 8px; margin: 12px 0; }
+    input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+    button { padding: 8px 14px; border: 0; border-radius: 6px; background: #f6821f; color: #fff; font-size: 1rem; cursor: pointer; }
+    button.sec { background: #555; }
+    #status { padding: 8px 10px; border-radius: 6px; background: #eee; font-size: .9rem; }
+    .ok { background: #d9f7e1 !important; } .erro { background: #fddede !important; }
+    ul { padding: 0; list-style: none; }
+    li { padding: 8px 0; border-bottom: 1px solid #eee; }
+    small { color: #777; }
+  </style>
+</head>
+<body>
+  <h1>Teste: Vercel → Cloudflare Tunnel → API local → SQLite</h1>
+
+  <label>URL da API (túnel):</label>
+  <div class="row">
+    <input id="apiUrl" placeholder="https://xxxx.trycloudflare.com">
+    <button class="sec" onclick="salvarUrl()">Salvar</button>
+  </div>
+  <div id="status">Aguardando...</div>
+
+  <div class="row">
+    <input id="texto" placeholder="Digite uma mensagem">
+    <button onclick="enviar()">Enviar</button>
+  </div>
+
+  <ul id="lista"></ul>
+
+  <script>
+    // Opcional: fixe a URL aqui para não precisar digitar no navegador
+    const API_PADRAO = "";
+
+    const $ = (id) => document.getElementById(id);
+    const getApi = () => (localStorage.getItem("apiUrl") || API_PADRAO).replace(/\/$/, "");
+
+    function status(msg, tipo) {
+      const el = $("status");
+      el.textContent = msg;
+      el.className = tipo || "";
+    }
+
+    function salvarUrl() {
+      localStorage.setItem("apiUrl", $("apiUrl").value.trim());
+      testar();
+    }
+
+    async function testar() {
+      if (!getApi()) return status("Informe a URL da API.", "erro");
+      const t0 = performance.now();
+      try {
+        const r = await fetch(getApi() + "/api/health");
+        const ms = Math.round(performance.now() - t0);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        status(`API conectada ✔ (${ms} ms)`, "ok");
+        listar();
+      } catch (e) {
+        status("Falha ao conectar: " + e.message, "erro");
+      }
+    }
+
+    async function listar() {
+      const r = await fetch(getApi() + "/api/mensagens");
+      const dados = await r.json();
+      $("lista").innerHTML = dados.map(m =>
+        `<li>${esc(m.texto)}<br><small>#${m.id} · ${m.criado_em}</small></li>`
+      ).join("");
+    }
+
+    async function enviar() {
+      const texto = $("texto").value.trim();
+      if (!texto) return;
+      try {
+        const r = await fetch(getApi() + "/api/mensagens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texto })
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        $("texto").value = "";
+        status("Salvo no banco local ✔", "ok");
+        listar();
+      } catch (e) {
+        status("Erro ao salvar: " + e.message, "erro");
+      }
+    }
+
+    const esc = (s) => s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+    $("apiUrl").value = getApi();
+    if (getApi()) testar();
+  </script>
+</body>
+</html>
