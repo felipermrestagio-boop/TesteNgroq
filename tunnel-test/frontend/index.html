@@ -98,8 +98,11 @@
   const API = (window.API_URL || "").replace(/\/$/, "");
   const $ = (id) => document.getElementById(id);
 
-  async function req(path, opts) {
+  async function req(path, opts = {}) {
     const t0 = performance.now();
+    // Header exigido pelo ngrok (plano gratuito) para não devolver a página
+    // de aviso em HTML no lugar do JSON da API. Não atrapalha outros túneis.
+    opts.headers = { "ngrok-skip-browser-warning": "1", ...(opts.headers || {}) };
     const r = await fetch(API + path, opts);
     if (!r.ok) throw new Error("HTTP " + r.status);
     const data = await r.json();

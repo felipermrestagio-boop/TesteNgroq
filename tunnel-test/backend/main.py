@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from fastapi import APIRouter
 
 DB_PATH = os.getenv("DB_PATH", "dados.db")
 

@@ -1,9 +1,9 @@
-# Teste: Vercel (front) + Cloudflare Tunnel (back e banco locais)
+# Teste: Vercel (front) + ngrok (back e banco locais)
 
 ```
 Navegador ──► Vercel (index.html estático)
     │
-    └──► https://xxxx.trycloudflare.com ──► cloudflared ──► FastAPI (localhost:8000) ──► SQLite (dados.db)
+    └──► https://seu-nome.ngrok-free.app ──► agente ngrok ──► FastAPI (localhost:8000) ──► SQLite (dados.db)
 ```
 
 ## 1. Rodar o backend local
@@ -16,43 +16,37 @@ pip install -r requirements.txt
 uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-Teste: abra http://localhost:8000/health e http://localhost:8000/docs
+Teste: http://localhost:8000/health e http://localhost:8000/docs
 
-## 2. Abrir o túnel (Cloudflare)
+## 2. Configurar e abrir o ngrok
 
-Instale o `cloudflared` (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) e rode:
+1. Crie uma conta em https://ngrok.com e instale o agente.
+2. No painel, copie seu authtoken e registre-o uma única vez:
+   ```bash
+   ngrok config add-authtoken SEU_TOKEN
+   ```
+3. Abra o túnel:
+   ```bash
+   ngrok http 8000
+   ```
+4. Copie a URL `Forwarding` (https://....ngrok-free.app).
+   Teste no navegador: `<url>/health`
+   (na primeira vez pode aparecer uma página de aviso do ngrok: clique em "Visit Site").
 
-```bash
-cloudflared tunnel --url http://localhost:8000
-```
-
-Ele imprime uma URL como `https://algo-aleatorio.trycloudflare.com`. Copie.
-Teste no navegador: `https://algo-aleatorio.trycloudflare.com/health`
-
-> Quick Tunnel muda de URL a cada execução. Para URL fixa, use um túnel nomeado com domínio seu na Cloudflare.
-
-## 3. Apontar o front para o túnel
+## 3. Apontar o front para o ngrok
 
 Edite `frontend/config.js`:
 
 ```js
-window.API_URL = "https://algo-aleatorio.trycloudflare.com";
+window.API_URL = "https://seu-nome.ngrok-free.app";
 ```
 
 ## 4. Publicar na Vercel
 
-```bash
-npm i -g vercel
-cd frontend
-vercel          # primeiro deploy (preview)
-vercel --prod   # produção
-```
-
-Ou suba a pasta `frontend` num repositório Git e importe na Vercel (Framework: "Other", sem build command).
+Suba a pasta `frontend` num repositório Git e importe na Vercel
+(Framework: Other, sem build/install/output). Ou: `cd frontend && vercel --prod`.
 
 ## 5. Restringir o CORS (depois que funcionar)
-
-Por padrão a API aceita qualquer origem (`*`). Depois do teste, reinicie com a URL da Vercel:
 
 ```bash
 ALLOWED_ORIGINS="https://seu-app.vercel.app" uvicorn main:app --host 127.0.0.1 --port 8000
@@ -62,12 +56,13 @@ ALLOWED_ORIGINS="https://seu-app.vercel.app" uvicorn main:app --host 127.0.0.1 -
 
 | Sintoma | Causa provável |
 |---|---|
-| "Sem conexão com a API" | Túnel caiu/URL mudou: atualize `config.js` e faça novo deploy |
+| Bolinha vermelha | Túnel caiu, URL errada no `config.js` ou falta novo deploy |
 | Erro de CORS no console | `ALLOWED_ORIGINS` não inclui o domínio da Vercel |
-| Mixed content bloqueado | `API_URL` com `http://` em vez de `https://` |
-| 1033 / 502 da Cloudflare | `uvicorn` não está rodando na porta 8000 |
+| Resposta em HTML / "Unexpected token <" | Página de aviso do ngrok; o header `ngrok-skip-browser-warning` não está sendo enviado (limpe o cache) |
+| ERR_NGROK_8012 / 502 | uvicorn não está rodando na porta 8000 |
+| Erro 429 | Limite do plano gratuito do ngrok atingido |
 
 ## Observações
 
-- Os dados ficam em `backend/dados.db` (SQLite) na sua máquina.
-- Esta API não tem autenticação. Para além do teste, adicione uma chave/token antes de deixar o túnel aberto.
+- Dados em `backend/dados.db` (SQLite), na sua máquina.
+- A API não tem autenticação. Não deixe o túnel aberto sem necessidade.

@@ -1,3 +1,3 @@
-// Cole aqui a URL pública do seu Cloudflare Tunnel (sem barra no final).
-// Ex.: "https://algo-aleatorio.trycloudflare.com"
-window.API_URL = "https://academy-dedicated-berry-rick.trycloudflare.com";
+// Cole aqui a URL pública do ngrok (sem barra no final e sem /api).
+// Ex.: "https://seu-nome.ngrok-free.app"
+window.API_URL = "http://localhost:8000";
