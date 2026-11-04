@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Disparador de requisições</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 1.4rem; }
+    fieldset { border: 1px solid #ddd; border-radius: 8px; margin: 14px 0; padding: 12px 14px; }
+    legend { color: #555; font-size: .9rem; padding: 0 6px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    label { display: block; font-size: .85rem; color: #555; }
+    input, select { width: 100%; box-sizing: border-box; padding: 7px; border: 1px solid #ccc; border-radius: 6px; font: inherit; }
+    .check { display: flex; gap: 8px; align-items: center; margin: 6px 0; color: #222; font-size: .95rem; }
+    .check input { width: auto; }
+    button { padding: 8px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font: inherit; cursor: pointer; }
+    button.sec { background: #555; }
+    button:disabled { opacity: .5; cursor: default; }
+    progress { width: 100%; height: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: .92rem; margin-top: 6px; }
+    td, th { text-align: left; padding: 5px 4px; border-bottom: 1px solid #eee; }
+    #log { background: #f6f6f6; border-radius: 6px; padding: 8px; font-size: .8rem; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+    .aviso { font-size: .85rem; color: #8a5a00; }
+    a { color: #777; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <h1>Disparador de requisições</h1>
+  <a href="index.html">← Voltar ao front</a>
+
+  <fieldset>
+    <legend>Disparo</legend>
+    <div class="grid">
+      <label>Requisição
+        <select id="tipo">
+          <option value="health">GET /api/health</option>
+          <option value="listar">GET /api/mensagens</option>
+          <option value="post">POST /api/mensagens</option>
+        </select>
+      </label>
+      <label>Total <input id="total" type="number" min="1" value="50"></label>
+      <label>Simultâneas <input id="conc" type="number" min="1" max="50" value="5"></label>
+      <label>Intervalo (ms) <input id="intervalo" type="number" min="0" value="0"></label>
+    </div>
+    <p class="aviso" id="avisoPost" hidden>O POST grava no banco: cada disparo cria uma mensagem "teste de carga #n".</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Derrubar uma URL de propósito (simulação)</legend>
+    <div id="simulacao"></div>
+  </fieldset>
+
+  <div class="row">
+    <button id="btnIniciar" onclick="iniciar()">Disparar</button>
+    <button id="btnParar" class="sec" onclick="parar = true" disabled>Parar</button>
+    <button class="sec" onclick="zerar()">Zerar</button>
+  </div>
+
+  <p><progress id="barra" value="0" max="1"></progress><br><span id="progresso">0 / 0</span></p>
+
+  <table>
+    <tbody id="resumo"></tbody>
+  </table>
+  <table>
+    <thead><tr><th>Atendidas por</th><th>Requisições</th></tr></thead>
+    <tbody id="porBase"></tbody>
+  </table>
+
+  <p>Últimas requisições</p>
+  <div id="log"></div>
+
+  <script src="api.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const nome = (b) => b.replace(/^https?:\/\//, "");
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    let parar = false, rodando = false;
+    let s, logLinhas = [];
+
+    function zerar() {
+      s = { total: 0, feitas: 0, ok: 0, erroHttp: 0, falhaTotal: 0, failovers: 0, porBase: {}, lat: [], t0: 0, t1: 0 };
+      logLinhas = [];
+      desenhar();
+    }
+
+    function p95(v) {
+      if (!v.length) return 0;
+      const o = [...v].sort((a, b) => a - b);
+      return o[Math.min(o.length - 1, Math.floor(o.length * 0.95))];
+    }
+
+    function desenhar() {
+      $("barra").max = s.total || 1;
+      $("barra").value = s.feitas;
+      $("progresso").textContent = `${s.feitas} / ${s.total}`;
+      const fim = s.t1 || performance.now();
+      const seg = s.t0 ? (fim - s.t0) / 1000 : 0;
+      const media = s.lat.length ? s.lat.reduce((a, b) => a + b, 0) / s.lat.length : 0;
+      const linhas = [
+        ["Sucesso (2xx/3xx)", s.ok],
+        ["Resposta com erro da API (4xx/5xx)", s.erroHttp],
+        ["Falha em todas as URLs", s.falhaTotal],
+        ["URL ativa agora", API.ativa().replace(/^https?:\/\//, "")],
+        ["Requisições que usaram failover", s.failovers],
+        ["Latência média / p95", `${Math.round(media)} ms / ${Math.round(p95(s.lat))} ms`],
+        ["Vazão", seg ? `${(s.feitas / seg).toFixed(1)} req/s` : "-"]
+      ];
+      $("resumo").innerHTML = linhas.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+      $("porBase").innerHTML = Object.entries(s.porBase)
+        .map(([b, n]) => `<tr><td>${nome(b)}</td><td>${n}</td></tr>`).join("") || "<tr><td colspan='2'>-</td></tr>";
+      $("log").textContent = logLinhas.join("\n");
+    }
+
+    function registrar(linha) {
+      logLinhas.push(linha);
+      if (logLinhas.length > 60) logLinhas.shift();
+    }
+
+    async function uma(n, tipo) {
+      const path = tipo === "health" ? "/api/health" : "/api/mensagens";
+      const opts = tipo === "post"
+        ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: "teste de carga #" + n }) }
+        : {};
+      try {
+        const res = await API.apiFetch(path, opts);
+        s.lat.push(res.ms);
+        s.porBase[res.base] = (s.porBase[res.base] || 0) + 1;
+        if (res.r.ok) s.ok++; else s.erroHttp++;
+        if (res.tentativas.length > 1) s.failovers++;
+        const falhas = res.tentativas.filter((t) => !t.ok).map((t) => `${nome(t.base)} (${t.erro})`).join(", ");
+        registrar(`#${n} ${res.r.status} ${nome(res.base)} ${Math.round(res.ms)} ms` + (falhas ? ` · falhou antes: ${falhas}` : ""));
+      } catch (e) {
+        s.falhaTotal++;
+        s.lat.push(e.ms || 0);
+        registrar(`#${n} FALHOU em todas as URLs: ` + (e.tentativas || []).map((t) => `${nome(t.base)} (${t.erro})`).join(", "));
+      }
+      s.feitas++;
+      desenhar();
+    }
+
+    async function iniciar() {
+      if (rodando) return;
+      zerar();
+      rodando = true; parar = false;
+      $("btnIniciar").disabled = true; $("btnParar").disabled = false;
+      API.resetar();
+
+      const total = Math.max(1, +$("total").value || 1);
+      const conc = Math.min(50, Math.max(1, +$("conc").value || 1));
+      const intervalo = Math.max(0, +$("intervalo").value || 0);
+      const tipo = $("tipo").value;
+      let enviados = 0;
+      s.total = total;
+      s.t0 = performance.now();
+
+      const worker = async () => {
+        while (!parar && enviados < total) {
+          const n = ++enviados;
+          await uma(n, tipo);
+          if (intervalo) await sleep(intervalo);
+        }
+      };
+      await Promise.all(Array.from({ length: conc }, worker));
+
+      s.t1 = performance.now();
+      rodando = false;
+      $("btnIniciar").disabled = false; $("btnParar").disabled = true;
+      desenhar();
+    }
+
+    // Caixas para derrubar cada URL de propósito
+    $("simulacao").innerHTML = API.getBases().map((b, i) =>
+      `<label class="check"><input type="checkbox" data-base="${b}"> Derrubar ${i === 0 ? "a principal" : "a reserva " + i}: ${nome(b)}</label>`
+    ).join("");
+    $("simulacao").addEventListener("change", (e) => {
+      API.simular(e.target.dataset.base, e.target.checked);
+    });
+    $("tipo").addEventListener("change", () => { $("avisoPost").hidden = $("tipo").value !== "post"; });
+
+    zerar();
+  </script>
+</body>
+</html>
