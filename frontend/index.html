@@ -68,7 +68,7 @@
 
     async function testar() {
       try {
-        const res = await API.apiFetch("/api/health");
+        const res = await API.apiFetch("/health");
         if (!res.r.ok) throw new Error("HTTP " + res.r.status);
         status("API conectada ✔ " + resumo(res), res.tentativas.length > 1 ? "alerta" : "ok");
         listar();
@@ -79,7 +79,7 @@
 
     async function listar() {
       try {
-        const res = await API.apiFetch("/api/mensagens");
+        const res = await API.apiFetch("/mensagens");
         if (!res.r.ok) throw new Error("HTTP " + res.r.status);
         const dados = await res.r.json();
         $("lista").innerHTML = dados.map((m) =>
@@ -94,7 +94,7 @@
       const texto = $("texto").value.trim();
       if (!texto) return;
       try {
-        const res = await API.apiFetch("/api/mensagens", {
+        const res = await API.apiFetch("/mensagens", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ texto })

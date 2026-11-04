@@ -34,9 +34,9 @@
     <div class="grid">
       <label>Requisição
         <select id="tipo">
-          <option value="health">GET /api/health</option>
-          <option value="listar">GET /api/mensagens</option>
-          <option value="post">POST /api/mensagens</option>
+          <option value="health">GET /health</option>
+          <option value="listar">GET /mensagens</option>
+          <option value="post">POST /mensagens</option>
         </select>
       </label>
       <label>Total <input id="total" type="number" min="1" value="50"></label>
@@ -119,7 +119,7 @@
     }
 
     async function uma(n, tipo) {
-      const path = tipo === "health" ? "/api/health" : "/api/mensagens";
+      const path = tipo === "health" ? "/health" : "/mensagens";
       const opts = tipo === "post"
         ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: "teste de carga #" + n }) }
         : {};
